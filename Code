@@ -1,0 +1,150 @@
+import streamlit as st
+import pandas as pd
+import json
+import os
+
+# ✅ File to store tasks
+TASKS_FILE = "tasks.json"
+
+# ✅ Predefined valid names for "Assigned To"
+VALID_ASSIGNEES = ["kavya", "roopa", "gouthami", "kishore", "tahir"]
+
+# ✅ Load tasks from JSON
+def load_tasks():
+    if os.path.exists(TASKS_FILE):
+        with open(TASKS_FILE, "r") as file:
+            return json.load(file)
+    return []
+
+# ✅ Save tasks to JSON
+def save_tasks(tasks):
+    with open(TASKS_FILE, "w") as file:
+        json.dump(tasks, file, indent=4)
+
+# ✅ Convert tasks to DataFrame
+def get_tasks_dataframe():
+    tasks = load_tasks()
+    return pd.DataFrame(tasks) if tasks else pd.DataFrame()
+
+# ✅ Add a new task
+def add_task(title, description, assigned_to, priority, deadline):
+    tasks = load_tasks()
+    task_id = len(tasks) + 1
+    new_task = {
+        "task_id": task_id,
+        "title": title,
+        "description": description,
+        "assigned_to": assigned_to,
+        "status": "Pending",
+        "priority": priority.title(),  # ✅ Convert priority to proper case
+        "deadline": str(deadline)
+    }
+    tasks.append(new_task)
+    save_tasks(tasks)
+
+# ✅ Update a specific task
+def update_task(task_id, new_status, new_priority, new_assigned_to):
+    tasks = load_tasks()
+    for task in tasks:
+        if task["task_id"] == task_id:
+            task["status"] = new_status
+            task["priority"] = new_priority.title()  # ✅ Ensure proper case
+            task["assigned_to"] = new_assigned_to
+            save_tasks(tasks)
+            return True
+    return False
+
+# ✅ Delete a specific task
+def delete_task(task_id):
+    tasks = load_tasks()
+    tasks = [task for task in tasks if task["task_id"] != task_id]
+    save_tasks(tasks)
+
+# ✅ Streamlit Interface
+st.title("📌 Task Manager")
+
+# 🟢 Add a new task
+with st.form("add_task_form"):
+    st.subheader("➕ Add New Task")
+    title = st.text_input("Task Title")
+    description = st.text_area("Task Description")
+    assigned_to = st.selectbox("Assigned To", VALID_ASSIGNEES)  # Only valid names allowed
+    priority = st.selectbox("Priority", ["High", "Medium", "Low"])
+    deadline = st.date_input("Deadline")
+
+    submitted = st.form_submit_button("Add Task")
+    if submitted:
+        add_task(title, description, assigned_to, priority, deadline)
+        st.success("✅ Task Added Successfully!")
+        if 'rerun' not in st.session_state:
+            st.session_state.rerun = True
+
+# 🟢 Filter Tasks by Status
+st.subheader("📋 Current Tasks")
+status_filter = st.selectbox("🔍 Filter by Status", ["All", "Pending", "In Progress", "Completed"])
+
+tasks_df = get_tasks_dataframe()
+
+if not tasks_df.empty:
+    if status_filter != "All":
+        tasks_df = tasks_df[tasks_df["status"] == status_filter]
+
+    st.write("### Current Tasks Table:")
+    st.dataframe(tasks_df)
+
+    # ✅ Separate Update and Delete Sections
+    st.subheader("🛠 Update Task")
+    task_ids = tasks_df["task_id"].tolist()
+
+    if task_ids:
+        update_task_id = st.selectbox("Select Task ID to Update", task_ids)
+        selected_task = tasks_df[tasks_df["task_id"] == update_task_id].iloc[0]
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            new_status = st.selectbox(
+                "Update Status",
+                ["Pending", "In Progress", "Completed"],
+                index=["Pending", "In Progress", "Completed"].index(selected_task["status"])
+            )
+
+        with col2:
+            new_priority = st.selectbox(
+                "Update Priority",
+                ["High", "Medium", "Low"],
+                index=["High", "Medium", "Low"].index(selected_task["priority"].title())  # ✅ Convert priority to match case
+            )
+
+        with col3:
+            new_assigned_to = st.selectbox(
+                "Update Assigned To",
+                VALID_ASSIGNEES,
+                index=VALID_ASSIGNEES.index(selected_task["assigned_to"]) if selected_task["assigned_to"] in VALID_ASSIGNEES else 0
+            )
+
+        if st.button("✅ Update Task"):
+            if update_task(update_task_id, new_status, new_priority, new_assigned_to):
+                st.success(f"✅ Task {update_task_id} updated successfully!")
+                if 'rerun' not in st.session_state:
+                    st.session_state.rerun = True
+            else:
+                st.error("❌ Failed to update task!")
+
+    # ✅ Delete Section
+    st.subheader("❌ Delete Task")
+    delete_task_id = st.selectbox("Select Task ID to Delete", task_ids, key="delete")
+    
+    if st.button("🗑 Delete Task"):
+        delete_task(delete_task_id)
+        st.warning(f"🚨 Task {delete_task_id} deleted!")
+        if 'rerun' not in st.session_state:
+            st.session_state.rerun = True
+
+else:
+    st.info("No tasks found. Please add tasks.")
+
+# Rerun if the rerun flag is set
+if 'rerun' in st.session_state and st.session_state.rerun:
+    st.session_state.rerun = False
+    st.rerun()
